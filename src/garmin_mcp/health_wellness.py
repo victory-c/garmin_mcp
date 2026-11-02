@@ -26,24 +26,25 @@ def _as_snapshot_list(payload: Any) -> List[Dict[str, Any]]:
 
 def _recovery_state(remaining_hours: Optional[float], phrase: Any) -> str:
     """Map remaining hours / Garmin change phrase to a coarse state."""
-    if phrase == "REACHED_ZERO" or remaining_hours == 0:
+    if remaining_hours == 0:
         return "recovered"
     if remaining_hours is None:
-        return "unknown"
+        return "recovered" if phrase == "REACHED_ZERO" else "unknown"
     if remaining_hours <= 6:
         return "nearly_recovered"
     if remaining_hours <= 24:
         return "recovering"
-    return "not_recovered"
-
-
-def _hours_from_recovery_minutes(minutes: Any, phrase: Any = None) -> Optional[float]:
+    return "not_recovered"def _hours_from_recovery_minutes(
+    minutes: Any, phrase: Any = None, context: Any = None,
+) -> Optional[float]:
     """Convert Garmin recovery minutes to hours.
 
     When ``recoveryTimeChangePhrase`` is ``REACHED_ZERO``, Garmin keeps the last
-    assigned minute value even though the clock has drained to zero.
+    assigned minute value even though the clock has drained to zero. After an
+    exercise reset the phrase can instead be stale while the minutes reflect a
+    new assignment, so prefer valid minutes for that context.
     """
-    if phrase == "REACHED_ZERO":
+    if phrase == "REACHED_ZERO" and context != "AFTER_POST_EXERCISE_RESET":
         return 0.0
     if isinstance(minutes, bool) or not isinstance(minutes, (int, float)):
         return None
@@ -62,7 +63,9 @@ def _recovery_from_readiness(payload: Any, source: str) -> Optional[Dict[str, An
         key=lambda item: str(item.get("timestampLocal") or item.get("timestamp") or ""),
     )
     phrase = latest.get("recoveryTimeChangePhrase")
-    hours = _hours_from_recovery_minutes(latest.get("recoveryTime"), phrase)
+    hours = _hours_from_recovery_minutes(
+        latest.get("recoveryTime"), phrase, latest.get("inputContext")
+    )
     if hours is None:
         return None
     score = latest.get("score")
